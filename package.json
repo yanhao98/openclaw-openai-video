@@ -1,11 +1,15 @@
 {
   "name": "openclaw-openai-video",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "OpenAI /v1/videos compatible video generation provider plugin for OpenClaw",
   "type": "module",
-  "main": "./index.js",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
   "files": [
-    "index.js",
+    "dist",
+    "src",
     "openclaw.plugin.json",
     "README.md",
     "LICENSE"
@@ -13,9 +17,21 @@
   "peerDependencies": {
     "openclaw": ">=2026.3.24-beta.2"
   },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "openclaw": "latest",
+    "typescript": "7.0.2"
+  },
   "openclaw": {
     "extensions": [
-      "./index.js"
+      "./src/index.ts"
+    ],
+    "runtimeExtensions": [
+      "./dist/index.js"
     ],
     "compat": {
       "pluginApi": ">=2026.3.24-beta.2",
@@ -24,6 +40,9 @@
     "build": {
       "openclawVersion": "2026.3.24-beta.2",
       "pluginSdkVersion": "2026.3.24-beta.2"
+    },
+    "install": {
+      "minHostVersion": ">=2026.3.24-beta.2"
     }
   },
   "keywords": [

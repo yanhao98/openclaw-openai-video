@@ -1,6 +1,55 @@
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+interface VideoPluginConfig {
+  baseUrl?: string;
+  apiKey?: string;
+  defaultModel?: string;
+  models?: string[];
+}
+
+interface VideoSourceAsset {
+  url?: string;
+  buffer?: Buffer;
+  mimeType?: string;
+  fileName?: string;
+  role?: string;
+}
+
+interface VideoGenerationRequest {
+  provider: string;
+  model: string;
+  prompt: string;
+  cfg?: {
+    plugins?: {
+      entries?: Record<string, { config?: VideoPluginConfig }>;
+    };
+    models?: {
+      providers?: Record<string, { baseUrl?: string }>;
+    };
+  };
+  timeoutMs?: number;
+  size?: string;
+  aspectRatio?: string;
+  resolution?: string;
+  durationSeconds?: number;
+  audio?: boolean;
+  watermark?: boolean;
+  inputImages?: VideoSourceAsset[];
+  providerOptions?: Record<string, unknown>;
+}
+
+interface VideoTaskResponse {
+  id?: string;
+  status?: string;
+  error?: unknown;
+  video_url?: string;
+  url?: string;
+  download_url?: string;
+  outputs?: Array<{ video_url?: string; url?: string }>;
+  [key: string]: unknown;
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 export default definePluginEntry({
   id: "openai-video",
@@ -20,24 +69,25 @@ export default definePluginEntry({
           supportsResolution: true,
           supportsSize: true,
           aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4"],
-          resolutions: ["720P", "1080P"]
+          resolutions: ["720P", "1080P"],
         },
         imageToVideo: {
           enabled: true,
           maxVideos: 1,
           maxInputImages: 1,
           supportsAspectRatio: true,
-          supportsResolution: true
+          supportsResolution: true,
         },
-        videoToVideo: { enabled: false }
+        videoToVideo: { enabled: false },
       },
 
       isConfigured() {
         return true;
       },
 
-      async generateVideo(req) {
-        const pluginCfg = req.cfg?.plugins?.entries?.["openai-video"]?.config ?? {};
+      async generateVideo(req: VideoGenerationRequest) {
+        const pluginCfg: VideoPluginConfig =
+          req.cfg?.plugins?.entries?.["openai-video"]?.config ?? {};
         const openaiCfg = req.cfg?.models?.providers?.openai ?? {};
 
         const baseUrl = (
@@ -58,27 +108,27 @@ export default definePluginEntry({
 
         if (!apiKey) {
           throw new Error(
-            "Missing API key for openai-video. Please configure it in plugin settings or set OPENAI_VIDEO_API_KEY / OPENAI_API_KEY."
+            "Missing API key for openai-video. Please configure it in plugin settings or set OPENAI_VIDEO_API_KEY / OPENAI_API_KEY.",
           );
         }
 
-        const headers = {
+        const headers: Record<string, string> = {
           Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
         };
 
         // 1. Build request body for POST /v1/videos
-        const body = {
+        const body: Record<string, unknown> = {
           model,
           prompt: req.prompt,
           ...(req.aspectRatio ? { aspect_ratio: req.aspectRatio } : {}),
           ...(req.size ? { size: req.size } : {}),
           ...(req.resolution ? { resolution: req.resolution.toLowerCase() } : {}),
           ...(req.durationSeconds ? { duration: req.durationSeconds } : {}),
-          ...req.providerOptions
+          ...req.providerOptions,
         };
 
-        if (req.inputImages?.length > 0) {
+        if (req.inputImages && req.inputImages.length > 0) {
           const img = req.inputImages[0];
           body.image =
             img.url ||
@@ -90,7 +140,7 @@ export default definePluginEntry({
         const createRes = await fetch(`${baseUrl}/videos`, {
           method: "POST",
           headers,
-          body: JSON.stringify(body)
+          body: JSON.stringify(body),
         });
 
         if (!createRes.ok) {
@@ -98,21 +148,23 @@ export default definePluginEntry({
           throw new Error(`POST ${baseUrl}/videos failed (${createRes.status}): ${errText}`);
         }
 
-        const task = await createRes.json();
+        const task = (await createRes.json()) as VideoTaskResponse;
         const videoId = task.id;
         if (!videoId) {
-          throw new Error(`POST ${baseUrl}/videos response missing task id: ${JSON.stringify(task)}`);
+          throw new Error(
+            `POST ${baseUrl}/videos response missing task id: ${JSON.stringify(task)}`,
+          );
         }
 
         // 2. Poll GET /v1/videos/{id}
         const deadline = Date.now() + (req.timeoutMs || 600_000);
         let status = task.status;
-        let latestTask = task;
+        let latestTask: VideoTaskResponse = task;
 
         while (status !== "completed" && status !== "succeeded" && status !== "ready") {
           if (status === "failed" || status === "cancelled" || status === "error") {
             throw new Error(
-              `Video task ${videoId} failed with status "${status}": ${JSON.stringify(latestTask.error || latestTask)}`
+              `Video task ${videoId} failed with status "${status}": ${JSON.stringify(latestTask.error || latestTask)}`,
             );
           }
           if (Date.now() > deadline) {
@@ -122,39 +174,42 @@ export default definePluginEntry({
           await sleep(5000);
 
           const pollRes = await fetch(`${baseUrl}/videos/${encodeURIComponent(videoId)}`, {
-            headers: { Authorization: `Bearer ${apiKey}` }
+            headers: { Authorization: `Bearer ${apiKey}` },
           });
 
           if (!pollRes.ok) {
             const errText = await pollRes.text().catch(() => "");
-            throw new Error(`GET ${baseUrl}/videos/${videoId} failed (${pollRes.status}): ${errText}`);
+            throw new Error(
+              `GET ${baseUrl}/videos/${videoId} failed (${pollRes.status}): ${errText}`,
+            );
           }
 
-          latestTask = await pollRes.json();
+          latestTask = (await pollRes.json()) as VideoTaskResponse;
           status = latestTask.status;
 
           if (status === "failed" || status === "cancelled" || status === "error") {
             throw new Error(
-              `Video task ${videoId} failed with status "${status}": ${JSON.stringify(latestTask.error || latestTask)}`
+              `Video task ${videoId} failed with status "${status}": ${JSON.stringify(latestTask.error || latestTask)}`,
             );
           }
         }
 
         // 3. Download generated MP4 video stream
-        // First try GET /v1/videos/{id}/content. If that fails but task contains output url, fallback to that url.
-        let videoBuffer;
+        let videoBuffer: Buffer;
         let mimeType = "video/mp4";
 
-        const contentRes = await fetch(`${baseUrl}/videos/${encodeURIComponent(videoId)}/content`, {
-          headers: { Authorization: `Bearer ${apiKey}` }
-        });
+        const contentRes = await fetch(
+          `${baseUrl}/videos/${encodeURIComponent(videoId)}/content`,
+          {
+            headers: { Authorization: `Bearer ${apiKey}` },
+          },
+        );
 
         if (contentRes.ok) {
           const arrayBuf = await contentRes.arrayBuffer();
           videoBuffer = Buffer.from(arrayBuf);
           mimeType = contentRes.headers.get("content-type") || "video/mp4";
         } else {
-          // Check if latestTask has direct download url
           const fallbackUrl =
             latestTask.video_url ||
             latestTask.url ||
@@ -173,7 +228,7 @@ export default definePluginEntry({
           } else {
             const errText = await contentRes.text().catch(() => "");
             throw new Error(
-              `GET ${baseUrl}/videos/${videoId}/content failed (${contentRes.status}): ${errText}`
+              `GET ${baseUrl}/videos/${videoId}/content failed (${contentRes.status}): ${errText}`,
             );
           }
         }
@@ -184,16 +239,16 @@ export default definePluginEntry({
             {
               buffer: videoBuffer,
               mimeType,
-              fileName: `${videoId}.mp4`
-            }
+              fileName: `${videoId}.mp4`,
+            },
           ],
           metadata: {
             videoId,
             status,
-            ...latestTask
-          }
+            ...latestTask,
+          },
         };
-      }
+      },
     });
-  }
+  },
 });

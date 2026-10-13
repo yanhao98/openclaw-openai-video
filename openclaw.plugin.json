@@ -9,6 +9,18 @@
     "onStartup": true
   },
   "enabledByDefault": true,
+  "setup": {
+    "providers": [
+      {
+        "id": "openai-video",
+        "envVars": [
+          "OPENAI_VIDEO_API_KEY",
+          "BIFROST_API_KEY",
+          "OPENAI_API_KEY"
+        ]
+      }
+    ]
+  },
   "contracts": {
     "videoGenerationProviders": [
       "openai-video"

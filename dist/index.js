@@ -163,7 +163,7 @@ export function buildOpenAIVideoGenerationProvider({ isProviderApiKeyConfigured 
       if (
         resolvePluginApiKey(pluginCfg?.apiKey) ||
         Boolean(pluginCfg?.apiKey) ||
-        normalizeOptionalString(process.env.OPENAI_VIDEO_API_KEY)
+        normalizeOptionalString(process.env.OPENAI_VIDEO_API_KEY ?? process.env.CCLOAD_API_KEY)
       ) {
         return true;
       }
@@ -200,7 +200,7 @@ export function buildOpenAIVideoGenerationProvider({ isProviderApiKeyConfigured 
       const pluginCfg = req.cfg?.plugins?.entries?.["openai-video"]?.config;
       const explicitApiKey =
         resolvePluginApiKey(pluginCfg?.apiKey) ??
-        normalizeOptionalString(process.env.OPENAI_VIDEO_API_KEY);
+        normalizeOptionalString(process.env.OPENAI_VIDEO_API_KEY ?? process.env.CCLOAD_API_KEY);
 
       let apiKey = explicitApiKey;
       if (!apiKey) {

@@ -11,6 +11,16 @@ const MAX_POLL_ATTEMPTS = 120;
 const OPENAI_VIDEO_SECONDS = [4, 8, 12];
 const OPENAI_VIDEO_SIZES = ["720x1280", "1280x720", "1024x1792", "1792x1024"];
 
+function resolvePluginApiKey(rawKey) {
+  if (typeof rawKey === "string") {
+    return normalizeOptionalString(rawKey);
+  }
+  if (rawKey && typeof rawKey === "object" && typeof rawKey.id === "string") {
+    return normalizeOptionalString(process.env[rawKey.id]);
+  }
+  return undefined;
+}
+
 function resolveConfiguredOpenAIBaseUrl(cfg, pluginCfg) {
   return (
     normalizeOptionalString(pluginCfg?.baseUrl) ??
@@ -147,11 +157,12 @@ export function buildOpenAIVideoGenerationProvider({ isProviderApiKeyConfigured 
     aliases: ["openai"],
     label: "OpenAI",
     defaultModel: DEFAULT_OPENAI_VIDEO_MODEL,
-    models: [DEFAULT_OPENAI_VIDEO_MODEL, "sora-2-pro"],
+    models: [DEFAULT_OPENAI_VIDEO_MODEL, "sora-2-pro", "gemini-video"],
     isConfigured: (ctx) => {
       const pluginCfg = ctx.cfg?.plugins?.entries?.["openai-video"]?.config;
       if (
-        normalizeOptionalString(pluginCfg?.apiKey) ||
+        resolvePluginApiKey(pluginCfg?.apiKey) ||
+        Boolean(pluginCfg?.apiKey) ||
         normalizeOptionalString(process.env.OPENAI_VIDEO_API_KEY)
       ) {
         return true;
@@ -188,7 +199,7 @@ export function buildOpenAIVideoGenerationProvider({ isProviderApiKeyConfigured 
     async generateVideo(req) {
       const pluginCfg = req.cfg?.plugins?.entries?.["openai-video"]?.config;
       const explicitApiKey =
-        normalizeOptionalString(pluginCfg?.apiKey) ??
+        resolvePluginApiKey(pluginCfg?.apiKey) ??
         normalizeOptionalString(process.env.OPENAI_VIDEO_API_KEY);
 
       let apiKey = explicitApiKey;
@@ -231,11 +242,18 @@ export function buildOpenAIVideoGenerationProvider({ isProviderApiKeyConfigured 
         label: "OpenAI video generation",
       });
       const providerConfig = req.cfg.models?.providers?.openai;
+      const allowPrivate =
+        pluginCfg?.allowPrivateNetwork ??
+        (pluginCfg?.baseUrl ? true : undefined);
+      const requestConfig = sanitizeConfiguredModelProviderRequest({
+        ...providerConfig?.request,
+        ...(allowPrivate !== undefined ? { allowPrivateNetwork: allowPrivate } : {}),
+      });
       const { baseUrl, allowPrivateNetwork, headers, dispatcherPolicy } =
         resolveProviderHttpRequestConfig({
           baseUrl: resolveConfiguredOpenAIBaseUrl(req.cfg, pluginCfg),
           defaultBaseUrl: DEFAULT_OPENAI_VIDEO_BASE_URL,
-          request: sanitizeConfiguredModelProviderRequest(providerConfig?.request),
+          request: requestConfig,
           defaultHeaders: {
             Authorization: `Bearer ${apiKey}`,
           },

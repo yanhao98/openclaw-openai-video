@@ -15,6 +15,7 @@
         "id": "openai-video",
         "envVars": [
           "OPENAI_VIDEO_API_KEY",
+          "CCLOAD_API_KEY",
           "BIFROST_API_KEY",
           "OPENAI_API_KEY"
         ]
@@ -35,6 +36,23 @@
       ]
     }
   },
+  "configContracts": {
+    "secretInputs": {
+      "paths": [
+        {
+          "path": "apiKey",
+          "expected": "string",
+          "ownerKind": "capability"
+        }
+      ]
+    }
+  },
+  "uiHints": {
+    "apiKey": {
+      "label": "API Key",
+      "sensitive": true
+    }
+  },
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -45,9 +63,18 @@
         "description": "Base URL of the OpenAI-compatible video endpoint (fallback to models.providers.openai.baseUrl)"
       },
       "apiKey": {
-        "type": "string",
+        "type": [
+          "string",
+          "object"
+        ],
         "title": "API Key",
-        "description": "API Key for video generation (fallback to OPENAI_VIDEO_API_KEY or models.providers.openai auth)"
+        "description": "API Key or SecretRef for video generation"
+      },
+      "allowPrivateNetwork": {
+        "type": "boolean",
+        "title": "Allow Private Network",
+        "description": "Allow requests to private/internal network endpoints (e.g. host.incus.internal, 127.0.0.1)",
+        "default": true
       },
       "defaultModel": {
         "type": "string",
@@ -64,7 +91,8 @@
         },
         "default": [
           "sora-2",
-          "sora-2-pro"
+          "sora-2-pro",
+          "gemini-video"
         ]
       }
     }

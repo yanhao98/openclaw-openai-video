@@ -1,0 +1,53 @@
+{
+  "id": "openai-video",
+  "name": "OpenAI Compatible Video Provider",
+  "description": "Standard /v1/videos (POST -> Poll -> GET /content) video generation provider for OpenClaw",
+  "categories": [
+    "media"
+  ],
+  "activation": {
+    "onStartup": true
+  },
+  "enabledByDefault": true,
+  "contracts": {
+    "videoGenerationProviders": [
+      "openai-video"
+    ]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "baseUrl": {
+        "type": "string",
+        "title": "API Base URL",
+        "description": "Base URL of the OpenAI-compatible video endpoint (e.g. https://api.example.com/v1)"
+      },
+      "apiKey": {
+        "type": "string",
+        "title": "API Key",
+        "description": "API Key for video generation (fallback to OPENAI_VIDEO_API_KEY, BIFROST_API_KEY, or OPENAI_API_KEY)"
+      },
+      "defaultModel": {
+        "type": "string",
+        "title": "Default Video Model",
+        "description": "Default model ID to use when no model is explicitly requested",
+        "default": "sora-2"
+      },
+      "models": {
+        "type": "array",
+        "title": "Available Models",
+        "description": "List of available video model IDs",
+        "items": {
+          "type": "string"
+        },
+        "default": [
+          "sora-2",
+          "sora",
+          "kling",
+          "wan2.6"
+        ]
+      }
+    }
+  }
+}

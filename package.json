@@ -1,0 +1,38 @@
+{
+  "name": "openclaw-openai-video",
+  "version": "1.0.0",
+  "description": "OpenAI /v1/videos compatible video generation provider plugin for OpenClaw",
+  "type": "module",
+  "main": "./index.js",
+  "files": [
+    "index.js",
+    "openclaw.plugin.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "peerDependencies": {
+    "openclaw": ">=2026.3.24-beta.2"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.js"
+    ],
+    "compat": {
+      "pluginApi": ">=2026.3.24-beta.2",
+      "minGatewayVersion": "2026.3.24-beta.2"
+    }
+  },
+  "keywords": [
+    "openclaw",
+    "openclaw-plugin",
+    "video-generation",
+    "openai",
+    "sora"
+  ],
+  "author": "yanhao98",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yanhao98/openclaw-openai-video.git"
+  }
+}

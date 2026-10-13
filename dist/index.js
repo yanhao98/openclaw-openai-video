@@ -32,9 +32,13 @@ function resolveConfiguredOpenAIBaseUrl(cfg, pluginCfg) {
 }
 
 function readOpenAIVideoFailureMessage(payload) {
-  return payload.status === "failed"
-    ? (normalizeOptionalString(payload.error?.message) ?? "OpenAI video generation failed")
-    : undefined;
+  if (payload.status !== "failed") {
+    return undefined;
+  }
+  if (typeof payload.error === "string") {
+    return normalizeOptionalString(payload.error) ?? "OpenAI video generation failed";
+  }
+  return normalizeOptionalString(payload.error?.message) ?? "OpenAI video generation failed";
 }
 
 function resolveDurationSeconds(durationSeconds) {
@@ -163,7 +167,9 @@ export function buildOpenAIVideoGenerationProvider({ isProviderApiKeyConfigured 
       if (
         resolvePluginApiKey(pluginCfg?.apiKey) ||
         Boolean(pluginCfg?.apiKey) ||
-        normalizeOptionalString(process.env.OPENAI_VIDEO_API_KEY ?? process.env.CCLOAD_API_KEY)
+        normalizeOptionalString(process.env.OPENAI_VIDEO_API_KEY) ||
+        normalizeOptionalString(process.env.GEMINI_WEB2API_API_KEY) ||
+        normalizeOptionalString(process.env.CCLOAD_API_KEY)
       ) {
         return true;
       }
@@ -200,7 +206,9 @@ export function buildOpenAIVideoGenerationProvider({ isProviderApiKeyConfigured 
       const pluginCfg = req.cfg?.plugins?.entries?.["openai-video"]?.config;
       const explicitApiKey =
         resolvePluginApiKey(pluginCfg?.apiKey) ??
-        normalizeOptionalString(process.env.OPENAI_VIDEO_API_KEY ?? process.env.CCLOAD_API_KEY);
+        normalizeOptionalString(process.env.OPENAI_VIDEO_API_KEY) ??
+        normalizeOptionalString(process.env.GEMINI_WEB2API_API_KEY) ??
+        normalizeOptionalString(process.env.CCLOAD_API_KEY);
 
       let apiKey = explicitApiKey;
       if (!apiKey) {
@@ -225,6 +233,7 @@ export function buildOpenAIVideoGenerationProvider({ isProviderApiKeyConfigured 
           createProviderOperationDeadline,
           createProviderOperationTimeoutResolver,
           pollProviderOperationJson,
+          postJsonRequest,
           postMultipartRequest,
           readProviderJsonResponse,
           resolveProviderOperationTimeoutMs,
@@ -242,17 +251,16 @@ export function buildOpenAIVideoGenerationProvider({ isProviderApiKeyConfigured 
         label: "OpenAI video generation",
       });
       const providerConfig = req.cfg.models?.providers?.openai;
-      const allowPrivate =
-        pluginCfg?.allowPrivateNetwork ??
-        (pluginCfg?.baseUrl ? true : undefined);
+      const allowPrivate = pluginCfg?.allowPrivateNetwork ?? true;
       const requestConfig = sanitizeConfiguredModelProviderRequest({
         ...providerConfig?.request,
-        ...(allowPrivate !== undefined ? { allowPrivateNetwork: allowPrivate } : {}),
+        allowPrivateNetwork: allowPrivate,
       });
       const { baseUrl, allowPrivateNetwork, headers, dispatcherPolicy } =
         resolveProviderHttpRequestConfig({
           baseUrl: resolveConfiguredOpenAIBaseUrl(req.cfg, pluginCfg),
           defaultBaseUrl: DEFAULT_OPENAI_VIDEO_BASE_URL,
+          allowPrivateNetwork: allowPrivate,
           request: requestConfig,
           defaultHeaders: {
             Authorization: `Bearer ${apiKey}`,
@@ -270,36 +278,59 @@ export function buildOpenAIVideoGenerationProvider({ isProviderApiKeyConfigured 
       const size = resolveSize(req);
       const referenceAsset = resolveReferenceAsset(req);
       const isVideoEdit = referenceAsset?.kind === "video";
-      const form = new FormData();
-      form.set("prompt", req.prompt);
-      if (isVideoEdit) {
-        form.set("video", referenceAsset.file);
-      } else {
-        form.set("model", model);
-        if (seconds) {
-          form.set("seconds", seconds);
-        }
-        if (size) {
-          form.set("size", size);
-        }
-        if (referenceAsset) {
+      const submitTimeoutMs = resolveProviderOperationTimeoutMs({
+        deadline,
+        defaultTimeoutMs: DEFAULT_TIMEOUT_MS,
+      });
+
+      let response;
+      let release;
+
+      if (referenceAsset) {
+        const form = new FormData();
+        form.set("prompt", req.prompt);
+        if (isVideoEdit) {
+          form.set("video", referenceAsset.file);
+        } else {
+          form.set("model", model);
+          if (seconds) {
+            form.set("seconds", seconds);
+          }
+          if (size) {
+            form.set("size", size);
+          }
           form.set("input_reference", referenceAsset.file);
         }
+        const multipartHeaders = new Headers(headers);
+        multipartHeaders.delete("Content-Type");
+        ({ response, release } = await postMultipartRequest({
+          url: `${baseUrl}/videos${isVideoEdit ? "/edits" : ""}`,
+          headers: multipartHeaders,
+          body: form,
+          timeoutMs: submitTimeoutMs,
+          fetchFn,
+          allowPrivateNetwork,
+          dispatcherPolicy,
+        }));
+      } else {
+        const jsonHeaders = new Headers(headers);
+        jsonHeaders.set("Content-Type", "application/json");
+        const jsonBody = {
+          model,
+          prompt: req.prompt,
+          ...(seconds ? { seconds } : {}),
+          ...(size ? { size } : {}),
+        };
+        ({ response, release } = await postJsonRequest({
+          url: `${baseUrl}/videos`,
+          headers: jsonHeaders,
+          body: jsonBody,
+          timeoutMs: submitTimeoutMs,
+          fetchFn,
+          allowPrivateNetwork,
+          dispatcherPolicy,
+        }));
       }
-      const multipartHeaders = new Headers(headers);
-      multipartHeaders.delete("Content-Type");
-      const { response, release } = await postMultipartRequest({
-        url: `${baseUrl}/videos${isVideoEdit ? "/edits" : ""}`,
-        headers: multipartHeaders,
-        body: form,
-        timeoutMs: resolveProviderOperationTimeoutMs({
-          deadline,
-          defaultTimeoutMs: DEFAULT_TIMEOUT_MS,
-        }),
-        fetchFn,
-        allowPrivateNetwork,
-        dispatcherPolicy,
-      });
 
       let submitted;
       try {
